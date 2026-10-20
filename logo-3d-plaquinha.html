@@ -4,9 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Logo 3D · Plaquinha de coleira</title>
+<link rel="preconnect" href="https://unpkg.com" crossorigin>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@500;700&family=DM+Serif+Display&display=swap" rel="stylesheet">
+<!-- Mesmo endereço de fontes do site: vem do cache e não atrasa a plaquinha -->
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&amp;family=DM+Serif+Display:ital@0;1&amp;display=swap" rel="stylesheet">
 <script type="importmap">
 {
   "imports": { "three": "https://unpkg.com/three@0.184.0/build/three.module.js" },
@@ -18,8 +20,8 @@
 </script>
 <style>
 html,body{margin:0;height:100%;background:transparent;overflow:hidden}
-canvas{display:block;width:100%;height:100%}
-/* Plaquinha de reserva (sem WebGL): mesma forma, cores e movimento do 3D */
+canvas{position:absolute;left:0;top:0;display:block;z-index:1}
+/* Plaquinha de reserva (sem WebGL ou enquanto o 3D carrega): mesma forma, cores e movimento do 3D */
 #fallback{position:absolute;inset:0;display:none;pointer-events:none;--u:0.3px}
 #fb{position:absolute;width:calc(var(--u)*1188);height:calc(var(--u)*1030);transform-origin:50% calc(var(--u)*13.5);perspective:calc(var(--u)*5200);will-change:transform}
 .ring{position:absolute;top:0;left:50%;width:calc(var(--u)*203);height:calc(var(--u)*203);margin-left:calc(var(--u)*-101.5);box-sizing:border-box;border-radius:50%;border:calc(var(--u)*19) solid #b88b5e;box-shadow:inset 0 0 0 calc(var(--u)*2) rgba(80,45,20,.28),0 0 0 calc(var(--u)*2) rgba(80,45,20,.22)}
@@ -71,9 +73,18 @@ canvas{display:block;width:100%;height:100%}
 // Estado, movimento e versão de reserva. Roda antes do 3D e continua valendo se o WebGL falhar.
 (() => {
   const state = { p: 0, px: 0, py: 0 }, region = { top: 0, bottom: 0 };
-  let visible = true;
+  let visible = true, lastInput = 0;
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
   const small = Math.min(screen.width, screen.height) < 700 || matchMedia('(pointer: coarse)').matches;
+
+  // O vetor do logo e as fontes do verso começam a baixar já, junto com o three.js
+  const dataP = fetch('otto-logo-3d.json').then(r => r.ok ? r.json() : null).catch(() => null);
+  const FONTS = ['400 150px "DM Serif Display"', '700 112px "DM Sans"', '500 70px "DM Sans"'];
+  let fontsDone = false;
+  const fontsP = Promise.race([
+    Promise.all(FONTS.map(f => document.fonts.load(f))),
+    new Promise(r => setTimeout(r, 5000))
+  ]).catch(() => {}).then(() => { fontsDone = true; });
 
   // Medidas da plaquinha (mesma unidade do vetor do logo: 968 × 626)
   const G = { X0: -594, X1: 594, Y0: -418, Y1: 480, CR: 170, HOLE: { x: 0, y: 400, r: 28 }, RR: 92, RT: 9.5 };
@@ -92,33 +103,34 @@ canvas{display:block;width:100%;height:100%}
     return { w, h, a, rh, pxH };
   };
 
-  // Física: giro (frente → verso) com mola; balanço de pêndulo empurrado pela rolagem e pelo mouse
+  // Física: giro (frente → verso) com mola; balanço de pêndulo empurrado pela rolagem e pelo mouse.
+  // O giro acompanha a rolagem desde o primeiro movimento e termina em 60% do trecho fixo da hero;
+  // a mola responde em ~0,4 s, sem quicar.
   const ease = k => 1 - Math.pow(1 - k, 3);
-  const sstep = v => { const x = Math.min(1, Math.max(0, v)); return x * x * (3 - 2 * x); };
-  const W0 = 2 * Math.PI * 0.6;
+  const W0 = 2 * Math.PI * 0.75, TK = 130, TC = 19, FLIP_END = 0.6, INTRO = 0.9;
   const M = { tw: reduce ? 0 : -1.5, twV: 0, sw: reduce ? 0 : 0.14, swV: 0, rx: 0.05, lift: 0, scale: 0.9, t0: performance.now(), last: performance.now(), lastP: 0, lastPx: 0 };
   function step(now) {
     const dt = Math.min(0.04, Math.max(0.001, (now - M.last) / 1000)); M.last = now;
     const t = (now - M.t0) / 1000, p = state.p;
     const dp = (p - M.lastP) / dt; M.lastP = p;
     const dpx = (state.px - M.lastPx) / dt; M.lastPx = state.px;
-    const intro = reduce ? 1 : ease(Math.min(1, t / 1.2));
-    const twT = sstep((p - 0.08) / 0.8) * Math.PI + state.px * 0.22;
-    const F = reduce ? 0 : (-dp * 3 - dpx * 0.35 + Math.sin(t * 0.9) * 0.06);
+    const intro = reduce ? 1 : ease(Math.min(1, t / INTRO));
+    const twT = Math.min(1, p / FLIP_END) * Math.PI + state.px * 0.22;
+    const F = reduce ? 0 : Math.max(-8, Math.min(8, -dp * 4 - dpx * 0.35)) + Math.sin(t * 0.9) * 0.06;
     for (let i = 0; i < 2; i++) {
       const h = dt / 2;
-      if (reduce) M.tw = twT; else { M.twV += (36 * (twT - M.tw) - 7.5 * M.twV) * h; M.tw += M.twV * h; }
-      M.swV += (-(W0 * W0) * Math.sin(M.sw) - 1.4 * M.swV + F) * h; M.sw += M.swV * h;
+      if (reduce) M.tw = twT; else { M.twV += (TK * (twT - M.tw) - TC * M.twV) * h; M.tw += M.twV * h; }
+      M.swV += (-(W0 * W0) * Math.sin(M.sw) - 2 * M.swV + F) * h; M.sw += M.swV * h;
     }
-    M.sw = Math.max(-0.45, Math.min(0.45, M.sw));
-    M.rx += ((0.05 + state.py * 0.08) - M.rx) * (1 - Math.exp(-dt * 4));
+    if (M.sw > 0.45) { M.sw = 0.45; if (M.swV > 0) M.swV = 0; } else if (M.sw < -0.45) { M.sw = -0.45; if (M.swV < 0) M.swV = 0; }
+    M.rx += ((0.05 + state.py * 0.08) - M.rx) * (1 - Math.exp(-dt * 7));
     M.lift = (reduce ? 0 : Math.sin(t * 1.1) * 6) + (1 - intro) * 90;
     M.scale = (0.9 + 0.1 * intro) * (1 - p * 0.08);
   }
   const hold = now => { M.last = now; M.lastP = state.p; M.lastPx = state.px; };
 
-  const status = { mode: 'boot', err: '', tries: 0 };
-  let mode = 'boot', r3 = null, cssU = 0.3;
+  const status = { mode: 'boot', err: '', tries: 0, pr: 0 };
+  let mode = 'boot', r3 = null, cssU = 0.3, fading = false;
   const $ = id => document.getElementById(id);
   const fbWrap = $('fallback'), fb = $('fb'), twistEl = $('fb-twist'), shadowEl = $('fb-shadow'), rings = [...document.querySelectorAll('.ring')];
   const frontEl = document.querySelector('.face.front'), backEl = document.querySelector('.face.back'), edgeEl = document.querySelector('.edge');
@@ -147,42 +159,74 @@ canvas{display:block;width:100%;height:100%}
     start();
     if (reason) status.err = String(reason);
     if (r3 && r3.canvas) r3.canvas.style.display = 'none';
-    r3 = null; mode = status.mode = 'css';
+    r3 = null; fading = false; mode = status.mode = 'css';
     fbWrap.style.display = 'block';
     layoutCss(); renderCss();
   }
+  // Se a versão de reserva já estava na tela (3D demorou), o 3D entra com um esmaecer curto por cima dela
   function use3d(api) {
+    const from = mode;
     start();
     r3 = api; mode = status.mode = '3d';
-    if (api.canvas) api.canvas.style.display = '';
-    fbWrap.style.display = 'none';
-    api.resize();
+    const c = api.canvas;
+    api.resize(true);
+    lastDraw = 0;
+    if (from === 'css') {
+      fading = true;
+      c.style.transition = 'none'; c.style.opacity = '0'; c.style.display = 'block';
+      setTimeout(() => { c.style.transition = 'opacity .4s ease'; c.style.opacity = '1'; }, 40);
+      setTimeout(() => { fading = false; if (mode === '3d') fbWrap.style.display = 'none'; }, 500);
+    } else {
+      c.style.opacity = '1'; c.style.display = 'block'; fbWrap.style.display = 'none';
+    }
   }
 
   const layout = () => { if (mode === '3d' && r3) r3.resize(); else if (mode === 'css') layoutCss(); };
   addEventListener('resize', layout);
   addEventListener('message', e => {
     const d = e.data || {};
-    if (d.type === 'otto-scroll') state.p = Math.min(1, Math.max(0, +d.p || 0));
-    if (d.type === 'otto-pointer') { state.px = +d.x || 0; state.py = +d.y || 0; }
-    if (d.type === 'otto-layout') { region.top = +d.top || 0; region.bottom = +d.bottom || 0; layout(); }
-    if (d.type === 'otto-visible') visible = !!d.on;
+    if (d.type === 'otto-scroll') {
+      const p = Math.min(1, Math.max(0, +d.p || 0));
+      if (p !== state.p) { state.p = p; lastInput = performance.now(); }
+    } else if (d.type === 'otto-pointer') {
+      state.px = +d.x || 0; state.py = +d.y || 0; lastInput = performance.now();
+    } else if (d.type === 'otto-layout') {
+      const t = +d.top || 0, b = +d.bottom || 0;
+      if (t !== region.top || b !== region.bottom) { region.top = t; region.bottom = b; layout(); }
+    } else if (d.type === 'otto-visible') visible = !!d.on;
   });
 
+  // Em movimento: até ~60 quadros/s (telas de 90/120 Hz não dobram o trabalho). Parada, só flutuando: ~30.
+  // Se o aparelho não acompanha (menos de ~40 quadros/s), o 3D passa a ser desenhado com menos pixels.
+  let lastDraw = 0, prevRaf = 0, perfN = 0, perfSum = 0, perfSkip = 60;
   function tick(now) {
-    if (!visible || mode === 'boot') { hold(now); return; }
+    const gap = prevRaf ? now - prevRaf : 0; prevRaf = now;
+    if (!visible || document.hidden || mode === 'boot') { hold(now); return; }
     step(now);
-    if (mode === '3d') { try { r3.render(M); } catch (e) { showCss('render: ' + (e && e.message || e)); } }
-    else renderCss();
+    if (mode !== '3d') { renderCss(); return; }
+    const active = now - lastInput < 1500 || now - M.t0 < 1600 || Math.abs(M.twV) > 0.03 || Math.abs(M.swV) > 0.03;
+    if (now - lastDraw >= (active ? 10.5 : 31)) {
+      lastDraw = now;
+      try { r3.render(M); } catch (e) { showCss('render: ' + (e && e.message || e)); return; }
+    }
+    if (fading) renderCss();
+    if (active && gap > 0 && gap < 200) {
+      if (perfSkip > 0) perfSkip--;
+      else {
+        perfSum += gap;
+        if (++perfN >= 45) { if (perfSum / perfN > 25 && r3.degrade()) perfSkip = 45; perfN = 0; perfSum = 0; }
+      }
+    }
   }
   const loop = now => { tick(now); requestAnimationFrame(loop); };
   requestAnimationFrame(loop);
   // Se o navegador pausar o rAF (iframe em segundo plano), um relógio de reserva mantém a cena viva
-  setInterval(() => { const now = performance.now(); if (visible && mode !== 'boot' && now - M.last > 300) tick(now); }, 120);
-  // Se o 3D não ficar pronto (rede lenta, bloqueio do WebGL), a plaquinha de reserva aparece
-  setTimeout(() => { if (mode === 'boot') showCss('3D não ficou pronto a tempo'); }, 6000);
+  setInterval(() => { const now = performance.now(); if (visible && !document.hidden && mode !== 'boot' && now - M.last > 300) tick(now); }, 120);
+  // Se o 3D demorar (rede lenta), a plaquinha de reserva aparece antes e o 3D entra por cima quando chegar
+  setTimeout(() => { if (mode === 'boot') { const im = document.querySelector('#fallback .logo'); if (im) new Image().src = im.src; } }, 500);
+  setTimeout(() => { if (mode === 'boot') showCss(); }, 1200);
 
-  window.Otto = { state, G, small, area, fit, status, showCss, use3d };
+  window.Otto = { state, G, small, area, fit, status, showCss, use3d, dataP, fontsP, fontsDone: () => fontsDone };
   window.__ottoStatus = status;
 })();
 </script>
@@ -193,9 +237,11 @@ const O = window.Otto, G = O.G, small = O.small;
 const wait = ms => new Promise(r => setTimeout(r, ms));
 
 async function getData() {
-  for (let i = 0; i < 4; i++) {
-    try { const r = await fetch('otto-logo-3d.json', i ? { cache: 'reload' } : {}); if (r.ok) return await r.json(); } catch (e) {}
+  const first = await O.dataP;
+  if (first && first.shapes) return first;
+  for (let i = 0; i < 3; i++) {
     await wait(400 * (i + 1));
+    try { const r = await fetch('otto-logo-3d.json', { cache: 'reload' }); if (r.ok) return await r.json(); } catch (e) {}
   }
   throw new Error('vetor do logo indisponível');
 }
@@ -209,13 +255,14 @@ function makeRenderer() {
   return null;
 }
 
-function build(data, renderer) {
+async function build(data, renderer) {
   const { X0, X1, Y0, Y1, CR, HOLE, RR, RT, ringY, OTOP, OH, PIVOT } = G;
-  renderer.setPixelRatio(Math.min(devicePixelRatio, small ? 1.5 : 2));
+  let pr = Math.min(window.devicePixelRatio || 1, small ? 1.5 : 2);
+  renderer.setPixelRatio(pr);
   renderer.setClearColor(0x000000, 0);
-  renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.VSMShadowMap;
-  document.body.insertBefore(renderer.domElement, document.body.firstChild);
+  const canvas = renderer.domElement;
+  canvas.style.display = 'none';
+  document.body.insertBefore(canvas, document.body.firstChild);
 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(24, 1, 10, 30000);
@@ -253,10 +300,14 @@ function build(data, renderer) {
   };
   const circle = (c, r) => { const p = new THREE.Path(); p.absarc(c.x, c.y, r, 0, Math.PI * 2, true); return p; };
 
+  // No celular, esmalte e logo sem a camada de verniz (clearcoat): o brilho vem do mesmo reflexo, com menos custo
+  const glossy = (name, color, roughness, clearcoat, clearcoatRoughness) => small
+    ? new THREE.MeshStandardMaterial({ name, color, roughness: roughness * 0.85, metalness: 0 })
+    : new THREE.MeshPhysicalMaterial({ name, color, roughness, metalness: 0, clearcoat, clearcoatRoughness });
   const bronze = new THREE.MeshStandardMaterial({ name: 'bronze', color: '#a7784e', metalness: 0.85, roughness: 0.32 });
   const ringMat = new THREE.MeshStandardMaterial({ name: 'argola', color: '#b88b5e', metalness: 0.95, roughness: 0.22 });
-  const enamelMat = new THREE.MeshPhysicalMaterial({ name: 'esmalte', color: '#E2BD98', roughness: 0.4, metalness: 0, clearcoat: 0.8, clearcoatRoughness: 0.2 });
-  const logoFace = new THREE.MeshPhysicalMaterial({ name: 'logo-frente', color: '#86381c', roughness: 0.42, metalness: 0, clearcoat: 0.5, clearcoatRoughness: 0.3 });
+  const enamelMat = glossy('esmalte', '#E2BD98', 0.4, 0.8, 0.2);
+  const logoFace = glossy('logo-frente', '#86381c', 0.42, 0.5, 0.3);
   const logoSide = new THREE.MeshStandardMaterial({ name: 'logo-lateral', color: '#5a2312', roughness: 0.55, metalness: 0 });
 
   const asm = new THREE.Group(); asm.name = 'plaquinha';
@@ -264,9 +315,9 @@ function build(data, renderer) {
   const plateShape = roundRect(X0, Y0, X1, Y1, CR); plateShape.holes.push(circle(HOLE, HOLE.r));
   const plateGeo = new THREE.ExtrudeGeometry(plateShape, { depth: PD, curveSegments: 32, bevelEnabled: true, bevelThickness: PB, bevelSize: PB, bevelOffset: -PB, bevelSegments: 5 });
   plateGeo.translate(0, 0, -PD / 2);
-  const plate = new THREE.Mesh(plateGeo, bronze); plate.name = 'placa'; plate.castShadow = true; asm.add(plate);
+  const plate = new THREE.Mesh(plateGeo, bronze); plate.name = 'placa'; asm.add(plate);
 
-  // Moldura de metal em relevo + esmalte creme rebaixado + logo marrom em relevo
+  // Moldura de metal em relevo + esmalte rebaixado + logo marrom em relevo
   const IN = 30, NOTCH = { x: 0, y: HOLE.y, r: 44 };
   const inlay = roundRect(X0 + IN, Y0 + IN, X1 - IN, Y1 - IN, CR - IN, NOTCH);
   const frameShape = roundRect(X0 + PB + 1, Y0 + PB + 1, X1 - PB - 1, Y1 - PB - 1, CR - PB - 1);
@@ -303,15 +354,14 @@ function build(data, renderer) {
   const addLogo = (shapes, opts, z, name) => {
     if (!shapes.length) return;
     const g = new THREE.ExtrudeGeometry(shapes, opts); g.translate(0, LOGO_DY, z);
-    const m = new THREE.Mesh(g, [logoFace, logoSide]); m.name = name; m.castShadow = true; asm.add(m);
+    const m = new THREE.Mesh(g, [logoFace, logoSide]); m.name = name; asm.add(m);
   };
   addLogo(bevelShapes, BEV, FZ + 1, 'logo');
   // Sem bevel, com a mesma frente e o mesmo fundo das peças com bevel
   addLogo(flatShapes, { depth: BEV.depth + BEV.bevelThickness * 2, curveSegments: 1, bevelEnabled: false }, FZ + 1 - BEV.bevelThickness, 'logo-letras');
 
-  // Verso gravado: endereço, telefone e Instagram
-  const CW = 2048, CH = Math.round(CW * (Y1 - Y0) / (X1 - X0));
-  const makeCanvas = () => { const c = document.createElement('canvas'); c.width = CW; c.height = CH; return c; };
+  // Verso gravado: endereço, telefone e Instagram (no celular, desenhado direto na metade do tamanho)
+  const CW = 2048, CH = Math.round(CW * (Y1 - Y0) / (X1 - X0)), TS = small ? 0.5 : 1;
   const dogPath = (s, ox, oy) => {
     const p = new Path2D();
     data.shapes.slice(0, 4).forEach(sh => [sh.outer, ...sh.holes].forEach(poly => {
@@ -329,8 +379,9 @@ function build(data, renderer) {
     { text: '@otto.life.pet', font: '500 70px "DM Sans", Arial, sans-serif', h: 70 }
   ];
   const total = items.reduce((a, it) => a + (it.dog || it.gap || it.h), 0);
-  const draw = (c, base, ink) => {
+  const paint = (c, base, ink) => {
     const g = c.getContext('2d');
+    g.setTransform(TS, 0, 0, TS, 0, 0);
     g.fillStyle = base; g.fillRect(0, 0, CW, CH);
     g.fillStyle = ink; g.textAlign = 'center'; g.textBaseline = 'top';
     let y = 250 + (CH - 120 - 250 - total) / 2;
@@ -339,21 +390,19 @@ function build(data, renderer) {
       else if (it.gap) y += it.gap;
       else { g.font = it.font; g.fillText(it.text, CW / 2, y); y += it.h; }
     }
-    return c;
   };
-  const texCanvas = (base, ink) => {
-    const c = draw(makeCanvas(), base, ink);
-    if (!small) return c;
-    const s = document.createElement('canvas'); s.width = CW / 2; s.height = Math.round(CH / 2);
-    s.getContext('2d').drawImage(c, 0, 0, s.width, s.height); return s;
-  };
-  const colorTex = new THREE.CanvasTexture(texCanvas('#a7784e', '#3b2012')); colorTex.colorSpace = THREE.SRGBColorSpace;
-  const bumpTex = new THREE.CanvasTexture(texCanvas('#ffffff', '#000000'));
-  const roughTex = new THREE.CanvasTexture(texCanvas('#4d4d4d', '#cccccc'));
-  [colorTex, bumpTex, roughTex].forEach(t => {
-    t.repeat.set(1 / (X1 - X0), 1 / (Y1 - Y0)); t.offset.set(-X0 / (X1 - X0), -Y0 / (Y1 - Y0));
-    t.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  const layers = [['#a7784e', '#3b2012'], ['#ffffff', '#000000'], ['#4d4d4d', '#cccccc']].map(([base, ink]) => {
+    const c = document.createElement('canvas'); c.width = Math.round(CW * TS); c.height = Math.round(CH * TS);
+    paint(c, base, ink);
+    const tex = new THREE.CanvasTexture(c);
+    tex.repeat.set(1 / (X1 - X0), 1 / (Y1 - Y0)); tex.offset.set(-X0 / (X1 - X0), -Y0 / (Y1 - Y0));
+    tex.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+    return { c, base, ink, tex };
   });
+  const [colorTex, bumpTex, roughTex] = layers.map(l => l.tex);
+  colorTex.colorSpace = THREE.SRGBColorSpace;
+  // O 3D não espera as fontes: se ainda não chegaram, o verso é redesenhado depois (ele só aparece ao rolar)
+  if (!O.fontsDone()) O.fontsP.then(() => layers.forEach(l => { paint(l.c, l.base, l.ink); l.tex.needsUpdate = true; }));
   const backMat = new THREE.MeshStandardMaterial({ name: 'verso-gravado', map: colorTex, bumpMap: bumpTex, bumpScale: 3, roughnessMap: roughTex, roughness: 1, metalness: 0.85 });
   const backShape = roundRect(X0 + PB, Y0 + PB, X1 - PB, Y1 - PB, CR - PB); backShape.holes.push(circle(HOLE, HOLE.r + 2));
   const back = new THREE.Mesh(new THREE.ShapeGeometry(backShape, 32), backMat);
@@ -361,55 +410,76 @@ function build(data, renderer) {
 
   // Argola dupla passando pelo furo
   const ringGeo = new THREE.TorusGeometry(RR, RT, 24, 120);
-  [-9, 9].forEach(dx => { const r = new THREE.Mesh(ringGeo, ringMat); r.name = 'argola'; r.rotation.y = Math.PI / 2; r.position.set(dx, ringY, 0); r.castShadow = true; asm.add(r); });
+  [-9, 9].forEach(dx => { const r = new THREE.Mesh(ringGeo, ringMat); r.name = 'argola'; r.rotation.y = Math.PI / 2; r.position.set(dx, ringY, 0); asm.add(r); });
 
   const hang = new THREE.Group(); hang.position.y = PIVOT; scene.add(hang);
   const twist = new THREE.Group(); hang.add(twist);
   asm.position.y = -PIVOT; twist.add(asm);
 
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(8000, 4000), new THREE.ShadowMaterial({ opacity: 0.18 }));
-  ground.name = 'sombra'; ground.rotation.x = -Math.PI / 2; ground.position.y = Y0 - 80; ground.receiveShadow = true;
-  scene.add(ground);
+  // Sombra no chão: mancha suave desenhada uma vez, que acompanha o giro e o balanço
+  // (antes era um mapa de sombras recalculado a cada quadro, o item mais pesado da cena)
+  const sc = document.createElement('canvas'); sc.width = sc.height = 128;
+  const sg = sc.getContext('2d'), rg = sg.createRadialGradient(64, 64, 0, 64, 64, 64);
+  rg.addColorStop(0, 'rgba(62,29,20,1)'); rg.addColorStop(0.5, 'rgba(62,29,20,0.5)'); rg.addColorStop(1, 'rgba(62,29,20,0)');
+  sg.fillStyle = rg; sg.fillRect(0, 0, 128, 128);
+  const shTex = new THREE.CanvasTexture(sc); shTex.colorSpace = THREE.SRGBColorSpace;
+  const shMat = new THREE.MeshBasicMaterial({ name: 'sombra', map: shTex, transparent: true, depthWrite: false, opacity: 0.3 });
+  const shadow = new THREE.Mesh(new THREE.PlaneGeometry(1250, 380), shMat);
+  shadow.name = 'sombra'; shadow.rotation.x = -Math.PI / 2; shadow.position.y = Y0 - 80; scene.add(shadow);
 
   scene.add(new THREE.HemisphereLight('#fff4e8', '#b08a68', 0.55));
   const key = new THREE.DirectionalLight('#ffffff', 1.25); key.position.set(-650, 520, 1000); scene.add(key);
   const rim = new THREE.DirectionalLight('#ffd8b0', 0.9); rim.position.set(600, 380, -900); scene.add(rim);
-  const topL = new THREE.DirectionalLight('#ffffff', 0.6); topL.position.set(-160, 1800, 300); topL.castShadow = true;
-  Object.assign(topL.shadow.camera, { left: -1000, right: 1000, top: 900, bottom: -900, near: 200, far: 5000 });
-  topL.shadow.mapSize.set(small ? 1024 : 2048, small ? 1024 : 2048); topL.shadow.radius = small ? 8 : 16; topL.shadow.blurSamples = small ? 10 : 20; topL.shadow.bias = -0.0004;
-  scene.add(topL);
+  const topL = new THREE.DirectionalLight('#ffffff', 0.6); topL.position.set(-160, 1800, 300); scene.add(topL);
 
-  const CY = (OTOP + Y0) / 2;
-  const resize = () => {
-    const f = O.fit();
-    renderer.setSize(f.w, f.h, false);
+  // Só o retângulo onde a plaquinha pode estar (balanço, subida da entrada e sombra) é desenhado, não a tela toda.
+  // O enquadramento é o mesmo de antes: a câmera recorta a mesma imagem.
+  const CY = (OTOP + Y0) / 2, MX = 1060, MT = OTOP + 150, MB = Y0 - 200;
+  let sizeKey = '';
+  const resize = force => {
+    const f = O.fit(), k = f.pxH / OH, cy = f.a.top + f.rh * 0.5;
+    const L = Math.max(0, Math.floor(f.w / 2 - MX * k)), R = Math.min(f.w, Math.ceil(f.w / 2 + MX * k));
+    const T = Math.max(0, Math.floor(cy - (MT - CY) * k)), B = Math.min(f.h, Math.ceil(cy + (CY - MB) * k));
+    const bw = Math.max(1, R - L), bh = Math.max(1, B - T);
+    const key = [f.w, f.h, L, T, bw, bh, pr, f.pxH.toFixed(2), cy.toFixed(1)].join();
+    if (key === sizeKey && !force) return;
+    sizeKey = key;
+    if (renderer.getPixelRatio() !== pr) renderer.setPixelRatio(pr);
+    renderer.setSize(bw, bh, false);
+    Object.assign(canvas.style, { left: L + 'px', top: T + 'px', width: bw + 'px', height: bh + 'px' });
     const t = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
     const dist = (OH * f.h) / (2 * t * f.pxH);
     camera.aspect = f.w / f.h;
     camera.position.set(0, CY + dist * 0.08, dist);
     camera.lookAt(0, CY, 0);
     camera.near = dist * 0.1; camera.far = dist * 4;
-    camera.setViewOffset(f.w, f.h, 0, f.h / 2 - (f.a.top + f.rh * 0.5), f.w, f.h);
+    camera.setViewOffset(f.w, f.h, L, T + f.h / 2 - cy, bw, bh);
     camera.updateProjectionMatrix();
+    O.status.pr = pr;
   };
   const render = m => {
     hang.rotation.set(m.rx, 0, m.sw);
     twist.rotation.y = m.tw;
     hang.position.y = PIVOT + m.lift;
     hang.scale.setScalar(m.scale);
+    shadow.scale.x = (0.32 + 0.68 * Math.abs(Math.cos(m.tw))) * m.scale;
+    shadow.position.x = (PIVOT - Y0) * Math.sin(m.sw) * 0.6;
+    shMat.opacity = 0.3 * (1 - Math.min(1, Math.max(0, m.lift) / 120) * 0.45);
     renderer.render(scene, camera);
   };
-  resize(); render({ rx: 0.05, sw: 0, tw: -1.5, lift: 90, scale: 0.9 });
-  return { canvas: renderer.domElement, resize, render };
+  const degrade = () => { if (pr <= 1.01) return false; pr = Math.max(1, pr - 0.25); resize(true); return true; };
+  const snap = m => { render(m); return canvas.toDataURL('image/png'); };
+
+  resize(true);
+  // Texturas e sombreadores preparados antes da primeira imagem, para a entrada não engasgar
+  [colorTex, bumpTex, roughTex, shTex].forEach(t => renderer.initTexture(t));
+  try { await renderer.compileAsync(scene, camera); } catch (e) { renderer.compile(scene, camera); }
+  return { canvas, resize, render, degrade, snap };
 }
 
 (async () => {
   let data;
   try { data = await getData(); } catch (e) { O.showCss(e.message); return; }
-  await Promise.race([
-    Promise.all(['400 150px "DM Serif Display"', '700 112px "DM Sans"', '500 70px "DM Sans"'].map(f => document.fonts.load(f))),
-    wait(2500)
-  ]).catch(() => {});
   // Tenta algumas vezes: o WebGL às vezes falha por um instante (muitas abas, GPU ocupada)
   let renderer = null;
   for (let i = 0; i < 4 && !renderer; i++) {
@@ -419,9 +489,10 @@ function build(data, renderer) {
   }
   if (!renderer) { O.showCss('WebGL indisponível'); return; }
   try {
-    const api = build(data, renderer);
+    const api = await build(data, renderer);
     renderer.domElement.addEventListener('webglcontextlost', e => { e.preventDefault(); O.showCss('contexto 3D perdido'); });
     renderer.domElement.addEventListener('webglcontextrestored', () => location.reload());
+    O.snap = m => api.snap(m);
     O.use3d(api);
   } catch (e) {
     console.error(e);

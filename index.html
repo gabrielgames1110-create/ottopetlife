@@ -291,10 +291,14 @@ dc-t{display:contents}
         <h2 style="margin:0;font-family:'DM Serif Display',Georgia,serif;font-weight:400;font-size:clamp(36px,4.6vw,58px);line-height:1;letter-spacing:-0.02em;color:#3E1D14;text-wrap:balance">Um espaço pensado para eles.</h2>
       </div>
     </div>
-    <div style="columns:3 160px;column-gap:20px">
+    <div data-ref="galRef" style="columns:3 160px;column-gap:20px">
       <figure style="margin:0 0 20px;break-inside:avoid;display:flex;flex-direction:column;gap:10px">
         <div style="aspect-ratio:4/5;border-radius:24px;overflow:hidden;background:#ECCDB1"><img src="foto-recepcao-v2.webp" alt="Recepção" width="960" height="1280" loading="lazy" decoding="async" style="display:block;width:100%;height:100%;object-fit:cover"></div>
         <figcaption style="font-size:14px;font-weight:600;color:#4D311F">Recepção</figcaption>
+      </figure>
+      <figure style="margin:0 0 20px;break-inside:avoid;display:flex;flex-direction:column;gap:10px">
+        <div style="aspect-ratio:4/5;border-radius:24px;overflow:hidden;background:#ECCDB1"><img src="foto-sala-banho.webp" alt="Área de banho e tosa" width="960" height="1280" loading="lazy" decoding="async" style="display:block;width:100%;height:100%;object-fit:cover"></div>
+        <figcaption style="font-size:14px;font-weight:600;color:#4D311F">Área de banho e tosa</figcaption>
       </figure>
       <figure style="margin:0 0 20px;break-inside:avoid;display:flex;flex-direction:column;gap:10px">
         <div style="aspect-ratio:4/5;border-radius:24px;overflow:hidden;background:#ECCDB1"><img src="foto-brincadeiras.webp" alt="Área de brincadeiras" width="960" height="1280" loading="lazy" decoding="async" style="display:block;width:100%;height:100%;object-fit:cover"></div>
@@ -305,12 +309,12 @@ dc-t{display:contents}
         <figcaption style="font-size:14px;font-weight:600;color:#4D311F">Acomodações da hospedagem</figcaption>
       </figure>
       <figure style="margin:0 0 20px;break-inside:avoid;display:flex;flex-direction:column;gap:10px">
-        <div style="aspect-ratio:4/5;border-radius:24px;overflow:hidden;background:#ECCDB1"><img src="foto-hospedagem.webp" alt="Gramado" width="960" height="1280" loading="lazy" decoding="async" style="display:block;width:100%;height:100%;object-fit:cover"></div>
-        <figcaption style="font-size:14px;font-weight:600;color:#4D311F">Gramado</figcaption>
-      </figure>
-      <figure style="margin:0 0 20px;break-inside:avoid;display:flex;flex-direction:column;gap:10px">
         <div style="aspect-ratio:1/1;border-radius:24px;overflow:hidden;background:#ECCDB1"><img src="foto-fachada.webp" alt="Fachada" width="904" height="1251" loading="lazy" decoding="async" style="display:block;width:100%;height:100%;object-fit:cover"></div>
         <figcaption style="font-size:14px;font-weight:600;color:#4D311F">Fachada</figcaption>
+      </figure>
+      <figure style="margin:0 0 20px;break-inside:avoid;display:flex;flex-direction:column;gap:10px">
+        <div style="aspect-ratio:4/5;border-radius:24px;overflow:hidden;background:#ECCDB1"><img src="foto-hospedagem.webp" alt="Gramado" width="960" height="1280" loading="lazy" decoding="async" style="display:block;width:100%;height:100%;object-fit:cover"></div>
+        <figcaption style="font-size:14px;font-weight:600;color:#4D311F">Gramado</figcaption>
       </figure>
       <figure style="margin:0 0 20px;break-inside:avoid;display:flex;flex-direction:column;gap:10px">
         <div style="aspect-ratio:4/5;border-radius:24px;overflow:hidden;background:#ECCDB1"><img src="foto-area-externa.webp" alt="Área externa" width="960" height="1280" loading="lazy" decoding="async" style="display:block;width:100%;height:100%;object-fit:cover"></div>
@@ -319,10 +323,6 @@ dc-t{display:contents}
       <figure style="margin:0 0 20px;break-inside:avoid;display:flex;flex-direction:column;gap:10px">
         <div style="aspect-ratio:4/5;border-radius:24px;overflow:hidden;background:#ECCDB1"><img src="foto-descanso.webp" alt="Cantinho do descanso" width="960" height="1280" loading="lazy" decoding="async" style="display:block;width:100%;height:100%;object-fit:cover"></div>
         <figcaption style="font-size:14px;font-weight:600;color:#4D311F">Cantinho do descanso</figcaption>
-      </figure>
-      <figure style="margin:0 0 20px;break-inside:avoid;display:flex;flex-direction:column;gap:10px">
-        <div style="aspect-ratio:4/5;border-radius:24px;overflow:hidden;background:#ECCDB1"><img src="foto-sala-banho.webp" alt="Área de banho e tosa" width="960" height="1280" loading="lazy" decoding="async" style="display:block;width:100%;height:100%;object-fit:cover"></div>
-        <figcaption style="font-size:14px;font-weight:600;color:#4D311F">Área de banho e tosa</figcaption>
       </figure>
     </div>
   </div>
@@ -532,8 +532,39 @@ class Component extends DCLogic {
   // Só o mouse inclina a plaquinha; no celular, o toque para rolar não a deixa torta
   onPointer = e => { if (e.pointerType && e.pointerType !== 'mouse') return; this.post({ type: 'otto-pointer', x: e.clientX / window.innerWidth * 2 - 1, y: e.clientY / window.innerHeight * 2 - 1 }); };
 
+  // Galeria "Nosso espaço": mesmas colunas e tamanhos do CSS (até 3 colunas de no mínimo 160px), mas preenchidas
+  // da esquerda para a direita, para a Recepção e o Banho e tosa ficarem lado a lado em qualquer tela
+  galRef = React.createRef();
+  layoutGallery = () => {
+    const el = this.galRef.current; if (!el) return;
+    const items = Array.prototype.filter.call(el.children, n => n.tagName === 'FIGURE');
+    const W = el.clientWidth; if (!W || !items.length) return;
+    const gap = 20, n = Math.max(1, Math.min(3, Math.floor((W + gap) / (160 + gap))));
+    const cw = (W - gap * (n - 1)) / n;
+    el.style.columns = 'auto'; el.style.position = 'relative';
+    items.forEach(it => { it.style.position = 'absolute'; it.style.margin = '0'; it.style.width = cw + 'px'; });
+    const hts = items.map(it => it.offsetHeight), cols = new Array(n).fill(0);
+    items.forEach((it, i) => {
+      let c = 0; for (let k = 1; k < n; k++) if (cols[k] < cols[c] - 1) c = k;
+      it.style.left = (c * (cw + gap)) + 'px'; it.style.top = cols[c] + 'px';
+      cols[c] += hts[i] + gap;
+    });
+    el.style.height = Math.max(0, Math.max.apply(null, cols) - gap) + 'px';
+  };
+  setupGallery() {
+    const el = this.galRef.current; if (!el) return;
+    this.layoutGallery();
+    const queue = () => { if (this._gq) return; this._gq = requestAnimationFrame(() => { this._gq = 0; this.layoutGallery(); }); };
+    this._gqFn = queue;
+    if (window.ResizeObserver) { this.gro = new ResizeObserver(queue); this.gro.observe(el); Array.prototype.forEach.call(el.children, f => this.gro.observe(f)); }
+    else window.addEventListener('resize', queue);
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(queue);
+    window.addEventListener('load', queue);
+  }
+
   componentDidMount() {
     this.setupPairs();
+    this.setupGallery();
     this.setupVideo();
     if (!(window.CSS && CSS.supports('height', '100svh'))) {
       const hr = this.heroRef.current, st = this.stageRef.current, tx = this.heroTextRef.current;
@@ -562,6 +593,9 @@ class Component extends DCLogic {
     if (this.ro) this.ro.disconnect();
     if (this.vio) this.vio.disconnect();
     if (this.pio) this.pio.disconnect();
+    if (this.gro) this.gro.disconnect();
+    if (this._gqFn) { window.removeEventListener('load', this._gqFn); window.removeEventListener('resize', this._gqFn); }
+    if (this._gq) cancelAnimationFrame(this._gq);
   }
 
   renderVals() {
@@ -576,7 +610,7 @@ class Component extends DCLogic {
       toggleMenu: () => this.setState(st => ({ menuOpen: !st.menuOpen })),
       closeMenu: () => this.setState({ menuOpen: false }),
       pairs, multiPairs: n > 1, pCounter: (s.pIdx + 1) + ' / ' + n,
-      pairsRef: this.pairsRef, prevP: () => this.stepPair(-1), nextP: () => this.stepPair(1), swipeStart: this.swipeStart, swipeEnd: this.swipeEnd,
+      pairsRef: this.pairsRef, galRef: this.galRef, prevP: () => this.stepPair(-1), nextP: () => this.stepPair(1), swipeStart: this.swipeStart, swipeEnd: this.swipeEnd,
       heroRef: this.heroRef, stageRef: this.stageRef, logoRef: this.logoRef, agendarRef: this.agendarRef, footerRef: this.footerRef,
       showWaBtn: (this.props.showWhatsApp ?? true) && !!s.waOn, heroTextRef: this.heroTextRef, headerLogoRef: this.headerLogoRef, syncHero: this.syncHero,
       hospVideoRef: this.hospVideoRef, toggleVideo: this.toggleVideo, videoPlaying: !s.videoPaused, videoPaused: !!s.videoPaused,
